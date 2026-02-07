@@ -10,7 +10,7 @@ from datetime import date, timedelta
 st.set_page_config(layout="wide")
 st.title("📊 Options Greeks & Gamma Exposure Dashboard")
 
-POLYGON_API_KEY = st.secrets["mD0LX0bzkc3sIUH3Hs0lwNucRo90HtML"]
+POLYGON_API_KEY = "mD0LX0bzkc3sIUH3Hs0lwNucRo90HtML"
 
 # ===============================
 # Math utils (no scipy)
