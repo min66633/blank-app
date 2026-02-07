@@ -110,7 +110,7 @@ if not price_df.empty:
 
     # Option Chain & GEX
 # 2. Gamma Exposure 차트 로직 수정
-    option_df, expiry_date = get_option_chain_yf(ticker)
+    option_df = get_option_chain_yf(ticker)
     
     if not option_df.empty:
         st.subheader(f"🔥 Dealer Gamma Exposure (Expiry: {expiry_date})")
