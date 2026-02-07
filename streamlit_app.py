@@ -57,12 +57,24 @@ def get_option_chain(ticker):
         return pd.DataFrame()
 
     df = pd.DataFrame(res["results"])
-    return df[[
+    
+    # 💥 핵심 수정 부분: 요청하려는 컬럼 리스트
+    desired_cols = [
         "strike_price",
         "expiration_date",
         "contract_type",
         "open_interest"
-    ]]
+    ]
+    
+    # 실제 데이터프레임에 존재하는 컬럼만 추출
+    available_cols = [col for col in desired_cols if col in df.columns]
+    
+    # 만약 open_interest가 없다면 0으로 채운 빈 컬럼이라도 만들어주는 것이 좋습니다 (차트 에러 방지)
+    if "open_interest" not in available_cols and not df.empty:
+        df["open_interest"] = 0
+        available_cols.append("open_interest")
+
+    return df[available_cols]
 
 # ===============================
 # Sidebar inputs
