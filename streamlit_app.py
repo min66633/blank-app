@@ -65,7 +65,7 @@ sigma = st.slider("Implied Volatility (%)", 5.0, 100.0, 25.0) / 100
 from datetime import date, timedelta
 
 end_date = date.today()
-start_date = end_date - timedelta(days=365 * 3)  # 최근 3년
+start_date = end_date - timedelta(days=365 * 5)  # 최근 5년
 
 price_url = (
     f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/"
