@@ -108,13 +108,15 @@ if not price_df.empty:
     if not option_df.empty:
         st.subheader(f"🔥 Dealer Gamma Exposure (Expiry: {expiry_date})")
         
-        # GEX 계산 로직 (백만 달러 단위 + 풋 옵션 음수 처리)
+        # --- 3. Gamma Exposure by Strike (GEX) 계산부 수정 ---
         option_df["gamma_val"] = option_df["strike_price"].apply(lambda K: bs_gamma(S_now, K, T_const, risk_free, sigma))
         
         def calc_gex(row):
             flip = 1 if row['contract_type'] == 'call' else -1
-            # Gamma * OI * S^2 * 0.01 (1% move) / 1,000,000
-            return flip * row['gamma_val'] * row['open_interest'].fillna(0) * (S_now**2) * 0.01 / 10**6
+            # NaN 처리: 숫자가 아니면 0으로 간주
+            oi = row['open_interest'] if pd.notna(row['open_interest']) else 0
+            # 공식: Gamma * OI * S^2 * 0.01 / 1,000,000
+            return flip * row['gamma_val'] * oi * (S_now**2) * 0.01 / 10**6
 
         option_df["gex_mil"] = option_df.apply(calc_gex, axis=1)
         
