@@ -1,158 +1,182 @@
 import streamlit as st
-import requests
 import pandas as pd
-import numpy as np
-from datetime import date, timedelta
+import requests
 import math
+from datetime import date, timedelta
 
-# =====================================
-# 페이지 설정
-# =====================================
+# ===============================
+# Page setup
+# ===============================
 st.set_page_config(layout="wide")
-st.title("Options Greeks Dashboard (Price-driven, No SciPy)")
+st.title("📊 Options Greeks & Gamma Exposure Dashboard")
+st.experimental_autorefresh(interval=60_000, key="refresh")
 
-# =====================================
-# 사용자 입력
-# =====================================
-ticker = st.text_input("Ticker", value="AAPL").upper()
-option_type = st.selectbox("Option Type", ["call", "put"])
+POLYGON_API_KEY = st.secrets["mD0LX0bzkc3sIUH3Hs0lwNucRo90HtML"]
 
-T_days = st.slider("Days to Expiration", 7, 180, 30)
-T = T_days / 365
-
-r = st.slider("Risk-free Rate (%)", 0.0, 5.0, 3.0) / 100
-sigma = st.slider("Implied Volatility (%)", 5.0, 100.0, 25.0) / 100
-
-POLYGON_API_KEY = "mD0LX0bzkc3sIUH3Hs0lwNucRo90HtML"
-
-# =====================================
-# Polygon 가격 데이터
-# =====================================
-end_date = date.today()
-start_date = end_date - timedelta(days=365 * 2)
-
-url = (
-    f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/"
-    f"{start_date}/{end_date}?adjusted=true&apiKey={POLYGON_API_KEY}"
-)
-
-res = requests.get(url).json()
-
-if "results" not in res:
-    st.error("가격 데이터를 불러올 수 없습니다.")
-    st.stop()
-
-price_df = pd.DataFrame(res["results"])
-
-price_df = price_df.rename(columns={
-    "c": "close",
-    "o": "open",
-    "h": "high",
-    "l": "low",
-    "v": "volume"
-})
-
-price_df["date"] = pd.to_datetime(price_df["t"], unit="ms")
-price_df = price_df.sort_values("date")
-
-# =====================================
-# Black-Scholes (표준 라이브러리만 사용)
-# =====================================
+# ===============================
+# Math utils (no scipy)
+# ===============================
 def norm_cdf(x):
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+    return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
 
-def norm_pdf(x):
-    return (1 / math.sqrt(2 * math.pi)) * math.exp(-0.5 * x * x)
-
-def bs_d1(S, K, T, r, sigma):
-    return (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
-
-def bs_delta(S, K, T, r, sigma, option):
-    d1 = bs_d1(S, K, T, r, sigma)
-    if option == "call":
-        return norm_cdf(d1)
-    else:
-        return norm_cdf(d1) - 1
+def bs_delta(S, K, T, r, sigma, call=True):
+    d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
+    return norm_cdf(d1) if call else norm_cdf(d1) - 1
 
 def bs_gamma(S, K, T, r, sigma):
-    d1 = bs_d1(S, K, T, r, sigma)
-    return norm_pdf(d1) / (S * sigma * math.sqrt(T))
+    d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
+    return math.exp(-d1**2 / 2) / (S * sigma * math.sqrt(2 * math.pi * T))
 
-# =====================================
-# 옵션 기준값
-# =====================================
-S_current = price_df["close"].iloc[-1]
-strike = S_current  # ATM 가정
+# ===============================
+# Data loaders
+# ===============================
+def get_price_data(ticker, years=2):
+    end = date.today()
+    start = end - timedelta(days=365 * years)
 
-# =====================================
-# Greeks 계산 (가격 기반)
-# =====================================
+    url = (
+        f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/"
+        f"{start}/{end}?adjusted=true&apiKey={POLYGON_API_KEY}"
+    )
+
+    res = requests.get(url).json()
+    if "results" not in res:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(res["results"])
+    df["date"] = pd.to_datetime(df["t"], unit="ms")
+    df.rename(columns={"c": "close"}, inplace=True)
+    return df[["date", "close"]]
+
+def get_option_chain(ticker):
+    url = (
+        f"https://api.polygon.io/v3/reference/options/contracts?"
+        f"underlying_ticker={ticker}&limit=200&apiKey={POLYGON_API_KEY}"
+    )
+    res = requests.get(url).json()
+    if "results" not in res:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(res["results"])
+    return df[[
+        "strike_price",
+        "expiration_date",
+        "contract_type",
+        "open_interest"
+    ]]
+
+# ===============================
+# Sidebar inputs
+# ===============================
+ticker = st.sidebar.text_input("Ticker", "AAPL")
+sigma = st.sidebar.slider("Implied Vol (σ)", 0.1, 1.0, 0.3)
+risk_free = 0.03
+days_to_expiry = st.sidebar.slider("Days to Expiry (proxy)", 7, 180, 30)
+T = days_to_expiry / 365
+
+# ===============================
+# Load data
+# ===============================
+price_df = get_price_data(ticker)
+if price_df.empty:
+    st.error("Price data not available")
+    st.stop()
+
+S_now = price_df.iloc[-1]["close"]
+
+option_df = get_option_chain(ticker)
+
+# ===============================
+# Greeks time series (ATM 기준)
+# ===============================
+strike_atm = round(S_now)
+
 price_df["delta"] = price_df["close"].apply(
-    lambda S: bs_delta(S, strike, T, r, sigma, option_type)
+    lambda S: bs_delta(S, strike_atm, T, risk_free, sigma)
 )
 
 price_df["gamma"] = price_df["close"].apply(
-    lambda S: bs_gamma(S, strike, T, r, sigma)
+    lambda S: bs_gamma(S, strike_atm, T, risk_free, sigma)
 )
 
-# =====================================
-# 1️⃣ Greeks 추이 차트
-# =====================================
-st.subheader("Delta & Gamma Trend (Price-driven)")
-st.line_chart(
-    price_df.set_index("date")[["delta", "gamma"]]
-)
+price_df["delta_exposure"] = price_df["delta"] * S_now
+price_df["gamma_exposure"] = price_df["gamma"] * (S_now ** 2)
 
-# =====================================
-# 2️⃣ 가격 vs Delta
-# =====================================
-st.subheader("Price vs Delta")
-st.scatter_chart(
-    price_df,
-    x="close",
-    y="delta"
-)
+# ===============================
+# Charts – Time Series
+# ===============================
+col1, col2 = st.columns(2)
 
-# =====================================
-# 3️⃣ Gamma Exposure (Strike Sweep)
-# =====================================
-st.subheader("Gamma Exposure by Strike")
+with col1:
+    st.subheader("📈 Price vs Delta")
+    st.line_chart(price_df.set_index("date")[["close", "delta"]])
 
-strikes = np.arange(
-    S_current * 0.8,
-    S_current * 1.2,
-    S_current * 0.02
-)
+with col2:
+    st.subheader("📈 Price vs Gamma")
+    st.line_chart(price_df.set_index("date")[["close", "gamma"]])
 
-gamma_values = [
-    bs_gamma(S_current, K, T, r, sigma) for K in strikes
+col3, col4 = st.columns(2)
+
+with col3:
+    st.subheader("📊 Delta Exposure (Time)")
+    st.line_chart(price_df.set_index("date")["delta_exposure"])
+
+with col4:
+    st.subheader("📊 Gamma Exposure (Time)")
+    st.line_chart(price_df.set_index("date")["gamma_exposure"])
+
+# ===============================
+# Gamma Exposure by Strike (GEX)
+# ===============================
+if not option_df.empty:
+    option_df["gamma"] = option_df["strike_price"].apply(
+        lambda K: bs_gamma(S_now, K, T, risk_free, sigma)
+    )
+
+    option_df["gex"] = (
+        option_df["gamma"]
+        * option_df["open_interest"].fillna(0)
+        * (S_now ** 2)
+        * 100
+    )
+
+    gex_by_strike = option_df.groupby("strike_price")["gex"].sum()
+
+    st.subheader("🔥 Gamma Exposure by Strike")
+    st.bar_chart(gex_by_strike)
+
+# ===============================
+# Option Chain Table
+# ===============================
+st.subheader("📋 Option Chain Snapshot")
+st.dataframe(option_df.sort_values("strike_price"))
+
+# ===============================
+# Custom X–Y Analysis Tool
+# ===============================
+st.subheader("📐 Custom X–Y Analysis")
+
+numeric_cols = [
+    "close",
+    "delta",
+    "gamma",
+    "delta_exposure",
+    "gamma_exposure"
 ]
 
-gamma_df = pd.DataFrame({
-    "strike": strikes,
-    "gamma": gamma_values
-})
-
-st.line_chart(
-    gamma_df.set_index("strike")
+x_var = st.selectbox("X-axis", numeric_cols, index=0)
+y_vars = st.multiselect(
+    "Y-axis (multi)",
+    numeric_cols,
+    default=["delta", "gamma"]
 )
 
-# =====================================
-# 4️⃣ Gamma 집중 구간 해석
-# =====================================
-max_gamma_strike = gamma_df.loc[gamma_df["gamma"].idxmax(), "strike"]
+custom_df = price_df[[x_var] + y_vars].copy()
 
-st.markdown(
-    f"""
-### 🔥 Gamma 집중 구간
-- **최대 Gamma Strike:** `{max_gamma_strike:.2f}`
-- 현재 가격: `{S_current:.2f}`  
-- 이 구간 근처에서는 가격 변동이 **가속**되거나  
-  **강하게 눌릴 가능성**이 있습니다.
-"""
-)
+normalize = st.checkbox("Normalize (0–1 scaling)", value=True)
+if normalize:
+    custom_df = (custom_df - custom_df.min()) / (custom_df.max() - custom_df.min())
 
-st.success("대시보드 로드 완료 (표준 라이브러리만 사용)")
-
+st.line_chart(custom_df)
 
 
