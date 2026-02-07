@@ -62,7 +62,16 @@ sigma = st.slider("Implied Volatility (%)", 5.0, 100.0, 25.0) / 100
 # =====================
 # 기초자산 가격 불러오기 (Polygon)
 # =====================
-price_url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/2025-01-01/2025-02-08"
+from datetime import date, timedelta
+
+end_date = date.today()
+start_date = end_date - timedelta(days=365 * 3)  # 최근 3년
+
+price_url = (
+    f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/"
+    f"{start_date}/{end_date}"
+)
+
 res = requests.get(price_url, params={"apiKey": API_KEY}).json()
 
 if "results" not in res:
