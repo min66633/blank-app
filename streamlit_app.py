@@ -9,7 +9,8 @@ from datetime import date, timedelta
 # ===============================
 st.set_page_config(layout="wide")
 st.title("📊 Options Greeks & Gamma Exposure Dashboard")
-st.experimental_autorefresh(interval=300_000, key="refresh")
+st.write("Last update:", pd.Timestamp.now())
+
 
 POLYGON_API_KEY = st.secrets["mD0LX0bzkc3sIUH3Hs0lwNucRo90HtML"]
 
