@@ -133,25 +133,40 @@ if not price_df.empty:
     else:
         st.warning("옵션 데이터를 찾을 수 없어 GEX 차트를 표시할 수 없습니다.")
 
-    # --- 5. Custom X–Y Analysis Tool ---
+# --- 5. Custom X–Y Analysis Tool ---
     st.markdown("---")
     st.subheader("📐 Custom X–Y Analysis")
     
-    numeric_cols = ["close", "delta", "gamma", "delta_exposure", "gamma_exposure"]
-    x_var = st.selectbox("X-axis (Independent)", numeric_cols, index=0)
-    y_vars = st.multiselect("Y-axis (Dependent)", numeric_cols, default=["delta", "gamma"])
+    # 1. 선택 가능한 컬럼 리스트 (date 추가)
+    all_cols = ["date", "close", "delta", "gamma", "delta_exposure", "gamma_exposure"]
+    
+    col_x, col_y = st.columns([1, 3]) # 화면 비율 조정
+    
+    with col_x:
+        x_var = st.selectbox("X-axis (Independent)", all_cols, index=0) # 기본값 date
+    with col_y:
+        y_vars = st.multiselect(
+            "Y-axis (Dependent)", 
+            [c for c in all_cols if c != "date"], # Y축에 date는 제외
+            default=["close", "delta"] # 기본값으로 주가와 델타 설정
+        )
 
     if y_vars:
-        custom_df = price_df[[x_var] + y_vars].copy()
+        # 데이터 복사 (X와 Y 변수들)
+        plot_df = price_df[[x_var] + y_vars].copy()
         
+        # 2. 정규화(Normalization) 처리
         normalize = st.checkbox("Normalize (0–1 scaling for comparison)", value=True)
         if normalize:
-            for col in custom_df.columns:
-                c_min, c_max = custom_df[col].min(), custom_df[col].max()
+            for col in y_vars:
+                c_min, c_max = plot_df[col].min(), plot_df[col].max()
                 if c_max != c_min:
-                    custom_df[col] = (custom_df[col] - c_min) / (c_max - c_min)
+                    plot_df[col] = (plot_df[col] - c_min) / (c_max - c_min)
         
-        st.line_chart(custom_df.set_index(x_var) if x_var in custom_df.columns else custom_df)
+        # 3. 차트 그리기
+        # X축이 date면 시계열 차트로, 아니면 산점도 기반 선형 차트로 표시됩니다.
+        st.line_chart(plot_df.set_index(x_var))
+        st.caption(f"Showing relationship between {x_var} and {', '.join(y_vars)}")
 
 else:
     st.error("데이터를 로드할 수 없습니다. 티커를 확인해 주세요.")
