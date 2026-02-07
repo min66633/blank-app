@@ -49,28 +49,33 @@ def get_price_data_yf(ticker, years=2):
         return pd.DataFrame()
 
 import requests
-def get_option_chain(ticker):
-    url = (
-        f"https://api.polygon.io/v3/reference/options/contracts?"
-        f"underlying_ticker={ticker}&limit=200&apiKey={POLYGON_API_KEY}"
-    )
+def get_option_chain_yf(ticker):
     try:
-        res = requests.get(url).json()
-        if "results" not in res:
+        tk = yf.Ticker(ticker)
+        # 가장 가까운 만기일 하나를 선택
+        exps = tk.options
+        if not exps:
             return pd.DataFrame()
-
-        df = pd.DataFrame(res["results"])
         
-        # 존재하는 컬럼만 안전하게 추출
-        desired = ["strike_price", "expiration_date", "contract_type", "open_interest"]
-        available = [c for c in desired if c in df.columns]
+        # 첫 번째 만기일 데이터 가져오기 (가장 활발함)
+        opt = tk.option_chain(exps[0])
+        calls = opt.calls
+        puts = opt.puts
         
-        final_df = df[available].copy()
-        if "open_interest" not in final_df.columns:
-            final_df["open_interest"] = 0
-            
-        return final_df
-    except:
+        # 콜/풋 합치기
+        calls['contract_type'] = 'call'
+        puts['contract_type'] = 'put'
+        df = pd.concat([calls, puts])
+        
+        # 컬럼명 통일 (Polygon 스타일 -> yfinance 스타일)
+        df.rename(columns={
+            "strike": "strike_price",
+            "openInterest": "open_interest"
+        }, inplace=True)
+        
+        return df[["strike_price", "open_interest", "contract_type"]]
+    except Exception as e:
+        st.error(f"Option 데이터 에러: {e}")
         return pd.DataFrame()
 
 # ===============================
@@ -104,14 +109,23 @@ if not price_df.empty:
         st.line_chart(price_df.set_index("date")[["close", "gamma"]])
 
     # Option Chain & GEX
-    option_df = get_option_chain(ticker)
+    option_df = get_option_chain_yf(ticker) # yfinance 함수로 변경
     if not option_df.empty:
-        st.subheader("🔥 Gamma Exposure by Strike")
-        option_df["gamma"] = option_df["strike_price"].apply(lambda K: bs_gamma(S_now, K, T, risk_free, sigma))
-        option_df["gex"] = option_df["gamma"] * option_df["open_interest"].fillna(0) * (S_now**2) * 100
-        
-        gex_chart = option_df.groupby("strike_price")["gex"].sum()
-        st.bar_chart(gex_chart)
+        st.subheader(f"🔥 Gamma Exposure by Strike (Expiry: {yf.Ticker(ticker).options[0]})")
+        # Gamma 계산
+        option_df["gamma"] = option_df["strike_price"].apply(
+        lambda K: bs_gamma(S_now, K, T, risk_free, sigma)
+    )
+    
+    # GEX 계산: Gamma * OI * (S^2) * 100 (계약단위)
+    # yfinance의 open_interest에 NaN이 있을 수 있으므로 fillna(0)
+        option_df["gex"] = (
+        option_df["gamma"] * option_df["open_interest"].fillna(0) * (S_now**2) * 100
+    )
+
+    # 차트 그리기
+    gex_by_strike = option_df.groupby("strike_price")["gex"].sum()
+    st.bar_chart(gex_by_strike)
         
         st.subheader("📋 Option Chain Snapshot")
         st.dataframe(option_df)
