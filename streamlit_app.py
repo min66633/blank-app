@@ -112,6 +112,17 @@ def bs_delta(S, K, T, r, sigma, option="call"):
         return norm.cdf(d1)
     else:
         return norm.cdf(d1) - 1
+price_df = pd.DataFrame(res["results"])
+
+price_df = price_df.rename(columns={
+    "c": "close",
+    "o": "open",
+    "h": "high",
+    "l": "low",
+    "v": "volume"
+})
+
+price_df["date"] = pd.to_datetime(price_df["t"], unit="ms")
 
 price_df["delta"] = price_df["close"].apply(
     lambda S: bs_delta(S, strike, T, r, sigma, option_type)
