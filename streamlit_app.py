@@ -124,8 +124,8 @@ if not price_df.empty:
     )
 
     # 차트 그리기
-    gex_by_strike = option_df.groupby("strike_price")["gex"].sum()
-    st.bar_chart(gex_by_strike)
+        gex_by_strike = option_df.groupby("strike_price")["gex"].sum()
+        st.bar_chart(gex_by_strike)
         
         st.subheader("📋 Option Chain Snapshot")
         st.dataframe(option_df)
