@@ -79,13 +79,18 @@ if "results" not in res:
     st.stop()
 
 price_df = pd.DataFrame(res["results"])
+price_df = price_df.rename(columns={"c": "close"})
 price_df["date"] = pd.to_datetime(price_df["t"], unit="ms")
 S = price_df.iloc[-1]["c"]
 
 st.subheader(f"📈 {ticker} Price")
 st.metric("Last Price", f"{S:.2f}")
 st.line_chart(price_df.set_index("date")["c"])
-
+strike = price_df["close"].iloc[-1]
+T = 30 / 365
+r = 0.03
+sigma = 0.25
+option_type = "call"
 # =====================
 # Greeks 계산
 # =====================
@@ -123,7 +128,7 @@ price_df = price_df.rename(columns={
 })
 
 price_df["date"] = pd.to_datetime(price_df["t"], unit="ms")
-
+strike = price_df["close"].iloc[-1]
 price_df["delta"] = price_df["close"].apply(
     lambda S: bs_delta(S, strike, T, r, sigma, option_type)
 )
