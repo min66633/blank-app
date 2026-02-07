@@ -39,7 +39,16 @@ def get_price_data(ticker, years=2):
     )
 
     res = requests.get(url).json()
+    
+# 에러 메시지 출력 (디버깅용)
+    if "status" in res and res["status"] != "OK":
+        st.error(f"Polygon API Error: {res.get('error', res.get('status'))}")
+        if res.get("status") == "NOT_AUTHORIZED":
+            st.warning("무료 플랜에서 지원하지 않는 티커이거나 API 키 문제일 수 있습니다.")
+        return pd.DataFrame()
+    
     if "results" not in res:
+        st.warning("결과 데이터(results)가 없습니다. 날짜 범위를 조절해 보세요.")
         return pd.DataFrame()
 
     df = pd.DataFrame(res["results"])
