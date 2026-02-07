@@ -23,7 +23,7 @@ T = T_days / 365
 r = st.slider("Risk-free Rate (%)", 0.0, 5.0, 3.0) / 100
 sigma = st.slider("Implied Volatility (%)", 5.0, 100.0, 25.0) / 100
 
-POLYGON_API_KEY = "YOUR_POLYGON_API_KEY"
+POLYGON_API_KEY = "mD0LX0bzkc3sIUH3Hs0lwNucRo90HtML"
 
 # =====================================
 # Polygon 가격 데이터
