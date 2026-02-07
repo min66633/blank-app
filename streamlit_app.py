@@ -104,3 +104,52 @@ g6.metric("Charm", f"{charm:.4f}")
 
 st.caption("Market price from Polygon | Greeks calculated (Black–Scholes)")
 
+import numpy as np
+
+def bs_delta(S, K, T, r, sigma, option="call"):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    if option == "call":
+        return norm.cdf(d1)
+    else:
+        return norm.cdf(d1) - 1
+
+price_df["delta"] = price_df["close"].apply(
+    lambda S: bs_delta(S, strike, T, r, sigma, option_type)
+)
+
+st.subheader("Delta Trend (Price-driven)")
+st.line_chart(price_df.set_index("date")["delta"])
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.scatter(price_df["close"], price_df["delta"], alpha=0.5)
+ax.set_xlabel("Underlying Price")
+ax.set_ylabel("Delta")
+
+st.pyplot(fig)
+
+strikes = np.arange(
+    price_df["close"].min() * 0.8,
+    price_df["close"].max() * 1.2,
+    5
+)
+
+def bs_gamma(S, K, T, r, sigma):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    return norm.pdf(d1) / (S * sigma * np.sqrt(T))
+
+current_price = price_df["close"].iloc[-1]
+
+gamma_values = [
+    bs_gamma(current_price, K, T, r, sigma) for K in strikes
+]
+
+fig, ax = plt.subplots()
+ax.plot(strikes, gamma_values)
+ax.axvline(current_price, linestyle="--")
+ax.set_xlabel("Strike")
+ax.set_ylabel("Gamma")
+
+st.pyplot(fig)
+
