@@ -109,23 +109,31 @@ if not price_df.empty:
         st.line_chart(price_df.set_index("date")[["close", "gamma"]])
 
     # Option Chain & GEX
-    option_df = get_option_chain_yf(ticker) # yfinance 함수로 변경
-    if not option_df.empty:
-        st.subheader(f"🔥 Gamma Exposure by Strike (Expiry: {yf.Ticker(ticker).options[0]})")
-        # Gamma 계산
-        option_df["gamma"] = option_df["strike_price"].apply(
-        lambda K: bs_gamma(S_now, K, T, risk_free, sigma)
-    )
+# 2. Gamma Exposure 차트 로직 수정
+    option_df, expiry_date = get_option_chain_yf(ticker)
     
-    # GEX 계산: Gamma * OI * (S^2) * 100 (계약단위)
-    # yfinance의 open_interest에 NaN이 있을 수 있으므로 fillna(0)
-        option_df["gex"] = (
-        option_df["gamma"] * option_df["open_interest"].fillna(0) * (S_now**2) * 100
-    )
+    if not option_df.empty:
+        st.subheader(f"🔥 Dealer Gamma Exposure (Expiry: {expiry_date})")
+        
+        # Gamma 계산
+        option_df["gamma"] = option_df["strike_price"].apply(lambda K: bs_gamma(S_now, K, T, risk_free, sigma))
+        
+        # GEX 계산 로직 변경 (Call은 +, Put은 -)
+        def calculate_gex(row):
+            # 딜러 입장에서 헷지하는 노출도 계산 (단위: 백만)
+            flip = 1 if row['contract_type'] == 'call' else -1
+            # 공식: Gamma * OI * (S^2) * 100(계약단위) / 10^6 (Million 단위)
+            return flip * row['gamma'] * row['open_interest'] * (S_now**2) * 0.01 / 10**6
 
-    # 차트 그리기
-        gex_by_strike = option_df.groupby("strike_price")["gex"].sum()
-        st.bar_chart(gex_by_strike)
+        option_df["gex_scaled"] = option_df.apply(calculate_gex, axis=1)
+        
+        # 현재가 근처 범위 필터링 (±15%)
+        mask = (option_df["strike_price"] > S_now * 0.85) & (option_df["strike_price"] < S_now * 1.15)
+        gex_chart = option_df[mask].groupby("strike_price")["gex_scaled"].sum()
+        
+        # 차트 출력
+        st.bar_chart(gex_chart)
+        st.caption("Y-축 단위: Million USD per 1% move (상대적 지표)")
         
         st.subheader("📋 Option Chain Snapshot")
         st.dataframe(option_df)
